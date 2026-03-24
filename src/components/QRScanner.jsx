@@ -1,12 +1,31 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { QrCode, Camera, StopCircle, AlertCircle } from 'lucide-react';
-import { QrReader } from 'react-qr-reader';
 
 const QRScanner = ({ onScan, onError }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [QrReaderComponent, setQrReaderComponent] = useState(null);
   const scanTimeoutRef = useRef();
+
+  useEffect(() => {
+    let active = true;
+    import('react-qr-reader')
+      .then((module) => {
+        if (active && module?.QrReader) {
+          setQrReaderComponent(() => module.QrReader);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load QR reader', err);
+        setError('Unable to load camera QR scanner on this device.');
+        onError('Unable to load camera QR scanner.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [onError]);
 
   const handleStartScanning = () => {
     setIsScanning(true);
@@ -76,13 +95,19 @@ const QRScanner = ({ onScan, onError }) => {
       ) : (
         <div className="space-y-4">
           <div className="relative bg-black rounded-lg overflow-hidden aspect-square">
-            <QrReader
-              onResult={handleScan}
-              onError={handleError}
-              constraints={{ facingMode: 'environment' }}
-              containerStyle={{ width: '100%', height: '100%' }}
-              videoContainerStyle={{ width: '100%', height: '100%' }}
-            />
+            {QrReaderComponent ? (
+              <QrReaderComponent
+                onResult={handleScan}
+                onError={handleError}
+                constraints={{ facingMode: 'environment' }}
+                containerStyle={{ width: '100%', height: '100%' }}
+                videoContainerStyle={{ width: '100%', height: '100%' }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white text-sm">
+                Loading scanner...
+              </div>
+            )}
             {isLoading && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                 <div className="text-center">
