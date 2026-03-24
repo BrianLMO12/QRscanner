@@ -214,11 +214,6 @@ const QRScanner = ({ onScan, onError }) => {
             </div>
           )}
 
-          <div className="mt-3 md:mt-4 p-2 md:p-3 bg-gray-100 rounded-lg">
-            <p className="text-xs text-gray-600">
-              <strong>Tip:</strong> Ensure good lighting and hold the camera steady. QR codes work best when fully visible within the frame.
-            </p>
-          </div>
         </div>
       </div>
     </div>
