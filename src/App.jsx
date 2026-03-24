@@ -8,6 +8,7 @@ import { parseQRCode } from './utils/qrParser';
 function App() {
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState(null);
+  const [scannerKey, setScannerKey] = useState(0);
 
   const handleScan = (rawData) => {
     try {
@@ -23,6 +24,7 @@ function App() {
   const handleScanAgain = () => {
     setScanResult(null);
     setError(null);
+    setScannerKey(prev => prev + 1); // Force remount of QRScanner
   };
 
   const handleError = (errorMsg) => {
@@ -57,7 +59,7 @@ function App() {
           {scanResult ? (
             <ResultTable result={scanResult} onScanAgain={handleScanAgain} />
           ) : (
-            <QRScanner onScan={handleScan} onError={handleError} />
+            <QRScanner key={scannerKey} onScan={handleScan} onError={handleError} />
           )}
         </div>
 
