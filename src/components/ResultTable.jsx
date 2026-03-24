@@ -17,24 +17,24 @@ const ResultTable = ({ data, type, onScanAgain }) => {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto animate-in fade-in duration-300">
+    <div className="w-full animate-in fade-in duration-300">
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         {/* Header */}
-        <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-gray-50 border-b border-gray-200 px-4 md:px-6 py-3 md:py-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-base md:text-lg font-semibold text-gray-900">
                 {getQRTypeDisplayName(type)}
               </h2>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-xs md:text-sm text-gray-600 mt-1">
                 Scanned content details
               </p>
             </div>
             <button
               onClick={handleCopyToClipboard}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${copied
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-gray-900 text-white hover:bg-gray-800'
+              className={`flex items-center justify-center gap-2 px-3 md:px-4 py-2 rounded-lg font-medium text-sm md:text-base transition-all duration-200 ${copied
+                ? 'bg-green-100 text-green-700'
+                : 'bg-gray-900 text-white hover:bg-gray-800'
                 }`}
             >
               {copied ? (
@@ -57,10 +57,10 @@ const ResultTable = ({ data, type, onScanAgain }) => {
           <table className="w-full">
             <thead className="bg-gray-100 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs md:text-sm font-semibold text-gray-900">
                   Field
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs md:text-sm font-semibold text-gray-900">
                   Value
                 </th>
               </tr>
@@ -71,10 +71,10 @@ const ResultTable = ({ data, type, onScanAgain }) => {
                   key={index}
                   className="hover:bg-gray-50 transition-colors"
                 >
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                  <td className="px-3 md:px-6 py-2 md:py-4 text-xs md:text-sm font-medium text-gray-900">
                     {row.key}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600 break-all">
+                  <td className="px-3 md:px-6 py-2 md:py-4 text-xs md:text-sm text-gray-600 break-all">
                     {row.value}
                   </td>
                 </tr>
@@ -84,10 +84,10 @@ const ResultTable = ({ data, type, onScanAgain }) => {
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-6 py-4">
+        <div className="bg-gray-50 border-t border-gray-200 px-4 md:px-6 py-3 md:py-4">
           <button
             onClick={onScanAgain}
-            className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-900 text-white font-medium text-sm md:text-base rounded-lg hover:bg-gray-800 transition-colors"
           >
             Scan Another QR Code
           </button>
