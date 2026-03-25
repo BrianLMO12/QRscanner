@@ -79,19 +79,38 @@ function PhoneScanner() {
       qrScannerRef.current = new QRCodeScanner();
     }
     try {
-      console.log('Starting QR scanner...');
-      qrScannerRef.current.startScan('qr-reader', handleQRScanSuccess, (error) => {
-        console.error('QR Scanner init error:', error);
-        setLastScan({
-          message: 'Camera access failed. Check permissions or try manual entry.'
-        });
-        setQrScannerActive(false);
+      console.log('Starting QR scanner... requesting camera permission first');
+      setLastScan({
+        message: 'Requesting camera permission...'
       });
-      setQrScannerActive(true);
+
+      // Request camera permission explicitly first
+      qrScannerRef.current.requestCameraPermission()
+        .then(() => {
+          console.log('Camera permission granted, starting scanner...');
+          qrScannerRef.current.startScan('qr-reader', handleQRScanSuccess, (error) => {
+            if (error) {
+              console.error('QR Scanner error:', error);
+              setLastScan({
+                message: error.message || 'Scanner error. Try manual entry.'
+              });
+              setQrScannerActive(false);
+            }
+          });
+          setQrScannerActive(true);
+          setLastScan(null);
+        })
+        .catch((permissionError) => {
+          console.error('Camera permission error:', permissionError);
+          setLastScan({
+            message: permissionError.message || 'Camera permission denied'
+          });
+          setQrScannerActive(false);
+        });
     } catch (error) {
       console.error('Failed to start QR scanner:', error);
       setLastScan({
-        message: 'Camera error: ' + (error?.message || 'Permission denied')
+        message: 'Error: ' + (error?.message || 'Permission denied')
       });
       setQrScannerActive(false);
     }
