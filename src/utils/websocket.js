@@ -280,40 +280,74 @@ export class WebSocketClient {
  * Works both on local WiFi and deployed on Vercel
  */
 export async function discoverServers(timeout = 5000) {
-  return new Promise((resolve) => {
-    const servers = [];
-    const seenPeers = new Set();
+  try {
+    // Get API endpoint based on current location
+    const apiBase = window.location.origin.includes('localhost') 
+      ? 'http://localhost:5179'
+      : window.location.origin;
 
-    // Start watching for servers in the peer registry
-    const unwatch = globalPeerRegistry.watchRegistry((peers) => {
-      peers.forEach(peer => {
-        if (peer.type === 'pc_server' && !seenPeers.has(peer.deviceID)) {
-          seenPeers.add(peer.deviceID);
-          servers.push({
-            deviceID: peer.deviceID,
-            url: peer.url,
-            origin: peer.url
-          });
-          console.log('Found server:', peer.deviceID, peer.url);
-        }
-      });
+    const response = await Promise.race([
+      fetch(`${apiBase}/api/servers`),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
+    ]);
+
+    if (!response.ok) throw new Error('Failed to fetch servers');
+    
+    const data = await response.json();
+    const servers = data.servers || [];
+
+    console.log('Discovered servers:', servers);
+    return servers;
+  } catch (error) {
+    console.warn('Server discovery failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Register this PC with the backend API for phone discovery
+ */
+export async function registerPC(deviceID, localIP, port = 8765) {
+  try {
+    const apiBase = window.location.origin.includes('localhost')
+      ? 'http://localhost:5179'
+      : window.location.origin;
+
+    const response = await fetch(`${apiBase}/api/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceID, ip: localIP, port })
     });
 
-    // Wait a bit for servers to be discovered, then resolve
-    const timer = setTimeout(() => {
-      unwatch();
-      resolve(servers);
-    }, timeout);
+    if (!response.ok) throw new Error('Registration failed');
+    
+    console.log('PC registered:', localIP);
+    return true;
+  } catch (error) {
+    console.error('PC registration error:', error);
+    return false;
+  }
+}
 
-    // If we find at least one server quickly, resolve sooner
-    const quickCheck = setInterval(() => {
-      if (servers.length > 0) {
-        clearInterval(quickCheck);
-        clearTimeout(timer);
-        unwatch();
-        // Wait a bit more to catch additional servers
-        setTimeout(() => resolve(servers), 500);
-      }
-    }, 100);
-  });
+/**
+ * Unregister PC when disconnecting
+ */
+export async function unregisterPC(deviceID) {
+  try {
+    const apiBase = window.location.origin.includes('localhost')
+      ? 'http://localhost:5179'
+      : window.location.origin;
+
+    await fetch(`${apiBase}/api/register`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceID })
+    });
+
+    console.log('PC unregistered');
+    return true;
+  } catch (error) {
+    console.error('PC unregistration error:', error);
+    return false;
+  }
 }

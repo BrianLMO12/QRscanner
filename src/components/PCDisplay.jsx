@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { getDeviceID } from '../utils/deviceDetection.js';
 import { getLocalIP, getServerURL } from '../utils/localIP.js';
-import { WebSocketServer } from '../utils/websocket.js';
+import { WebSocketServer, registerPC, unregisterPC } from '../utils/websocket.js';
 import { initCamera, stopCamera, scanFrame, formatBarcodeData } from '../utils/scannerUtils.js';
 
 function PCDisplay({ setError }) {
@@ -26,13 +26,28 @@ function PCDisplay({ setError }) {
     console.log('PC Display Ready');
     console.log('Device ID:', deviceID);
 
-    // Detect local IP for QR code
+    // Detect local IP for QR code and register with API
     getLocalIP().then(ip => {
       setLocalIP(ip);
       if (ip) {
         const url = getServerURL(ip, 8765);
         setQrURL(url);
         console.log('Local IP detected:', ip);
+        
+        // Register this PC with the backend for phone discovery
+        registerPC(deviceID, ip, 8765).then(success => {
+          if (success) {
+            console.log('PC registered with backend for phone discovery');
+            // Periodically re-register to keep it alive
+            const registrationInterval = setInterval(() => {
+              registerPC(deviceID, ip, 8765);
+            }, 20000); // Re-register every 20 seconds
+            
+            // Store interval for cleanup
+            wsServerRef.current = wsServerRef.current || {};
+            wsServerRef.current.registrationInterval = registrationInterval;
+          }
+        });
       } else {
         console.warn('Could not detect local IP, using localhost');
         setQrURL(getServerURL('localhost', 8765));
@@ -44,7 +59,13 @@ function PCDisplay({ setError }) {
     wsServerRef.current.start();
 
     return () => {
+      // Unregister PC when leaving
+      unregisterPC(deviceID);
+      
       if (wsServerRef.current) {
+        if (wsServerRef.current.registrationInterval) {
+          clearInterval(wsServerRef.current.registrationInterval);
+        }
         wsServerRef.current.stop();
       }
       if (streamRef.current) {
