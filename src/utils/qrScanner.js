@@ -14,11 +14,11 @@ export class QRCodeScanner {
   async requestCameraPermission() {
     try {
       // Explicitly request camera permission
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
-        audio: false 
+        audio: false
       });
-      
+
       // Stop the stream - we just needed to trigger permission
       stream.getTracks().forEach(track => track.stop());
       console.log('Camera permission granted');
@@ -40,7 +40,7 @@ export class QRCodeScanner {
 
     try {
       console.log('Initializing QR scanner...');
-      
+
       this.scanner = new Html5QrcodeScanner(
         elementId,
         {
