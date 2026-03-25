@@ -282,7 +282,7 @@ export class WebSocketClient {
 export async function discoverServers(timeout = 5000) {
   try {
     // Get API endpoint based on current location
-    const apiBase = window.location.origin.includes('localhost') 
+    const apiBase = window.location.origin.includes('localhost')
       ? 'http://localhost:5179'
       : window.location.origin;
 
@@ -292,7 +292,7 @@ export async function discoverServers(timeout = 5000) {
     ]);
 
     if (!response.ok) throw new Error('Failed to fetch servers');
-    
+
     const data = await response.json();
     const servers = data.servers || [];
 
@@ -320,7 +320,7 @@ export async function registerPC(deviceID, localIP, port = 8765) {
     });
 
     if (!response.ok) throw new Error('Registration failed');
-    
+
     console.log('PC registered:', localIP);
     return true;
   } catch (error) {

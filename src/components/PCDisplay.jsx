@@ -33,7 +33,7 @@ function PCDisplay({ setError }) {
         const url = getServerURL(ip, 8765);
         setQrURL(url);
         console.log('Local IP detected:', ip);
-        
+
         // Register this PC with the backend for phone discovery
         registerPC(deviceID, ip, 8765).then(success => {
           if (success) {
@@ -42,7 +42,7 @@ function PCDisplay({ setError }) {
             const registrationInterval = setInterval(() => {
               registerPC(deviceID, ip, 8765);
             }, 20000); // Re-register every 20 seconds
-            
+
             // Store interval for cleanup
             wsServerRef.current = wsServerRef.current || {};
             wsServerRef.current.registrationInterval = registrationInterval;
@@ -61,7 +61,7 @@ function PCDisplay({ setError }) {
     return () => {
       // Unregister PC when leaving
       unregisterPC(deviceID);
-      
+
       if (wsServerRef.current) {
         if (wsServerRef.current.registrationInterval) {
           clearInterval(wsServerRef.current.registrationInterval);
