@@ -1,26 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WebSocketClient, discoverServers } from '../utils/websocket.js';
 import { getDeviceID } from '../utils/deviceDetection.js';
+import { QRCodeScanner } from '../utils/qrScanner.js';
 import { initCamera, stopCamera, scanFrame, formatBarcodeData } from '../utils/scannerUtils.js';
 
 function PhoneScanner() {
-  const [status, setStatus] = useState('idle'); // idle, searching, connected, scanning, error
+  const [status, setStatus] = useState('connect'); // connect, idle, searching, connected, scanning, error
   const [connectionStatus, setConnectionStatus] = useState('disconnected'); // disconnected, connecting, connected
   const [servers, setServers] = useState([]);
   const [wsClient] = useState(new WebSocketClient());
   const [isScanning, setIsScanning] = useState(false);
   const [lastScan, setLastScan] = useState(null);
+  const [manualURL, setManualURL] = useState('');
+  const [qrScannerActive, setQrScannerActive] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const scanIntervalRef = useRef(null);
+  const qrScannerRef = useRef(null);
 
   const deviceID = getDeviceID();
 
   // Initialize and search for servers
   useEffect(() => {
-    searchForServers();
+    if (status === 'connect') {
+      searchForServers();
+    }
 
     // Setup WebSocket listeners
     wsClient.on('connected', handleConnected);
@@ -28,6 +34,9 @@ function PhoneScanner() {
     wsClient.on('error', handleWSError);
 
     return () => {
+      if (qrScannerRef.current) {
+        qrScannerRef.current.stopScan();
+      }
       if (streamRef.current) {
         stopCamera(streamRef.current);
       }
@@ -35,36 +44,58 @@ function PhoneScanner() {
   }, []);
 
   async function searchForServers() {
-    setStatus('searching');
-    setConnectionStatus('disconnected');
-
     try {
       const foundServers = await discoverServers(5000);
 
       if (foundServers.length > 0) {
         setServers(foundServers);
-        setStatus('idle');
       } else {
-        setStatus('error');
-        setLastScan({
-          message: 'No PC servers found. Make sure PC is connected and running on the same WiFi.'
-        });
+        // No servers found via discovery
       }
     } catch (error) {
-      setStatus('error');
+      console.error('Search failed:', error);
+    }
+  }
+
+  function handleQRScanSuccess(decodedText) {
+    console.log('QR Code scanned:', decodedText);
+    if (qrScannerRef.current) {
+      qrScannerRef.current.stopScan();
+    }
+    setQrScannerActive(false);
+    setManualURL(decodedText);
+    setStatus('idle');
+    // Auto-connect to the scanned URL
+    setTimeout(() => connectToURL(decodedText), 500);
+  }
+
+  function handleQRScanError(error) {
+    // Silent error - QR scanning is continuous
+    console.debug('QR scan attempt:', error);
+  }
+
+  function startQRScanner() {
+    if (!qrScannerRef.current) {
+      qrScannerRef.current = new QRCodeScanner();
+    }
+    try {
+      qrScannerRef.current.startScan('qr-reader', handleQRScanSuccess, handleQRScanError);
+      setQrScannerActive(true);
+    } catch (error) {
+      console.error('Failed to start QR scanner:', error);
       setLastScan({
-        message: 'Search failed: ' + error.message
+        message: 'Camera access denied. Try manual URL entry.'
       });
     }
   }
 
-  async function connectToServer(server) {
+  async function connectToURL(url) {
+    setStatus('connecting');
     setConnectionStatus('connecting');
-
     try {
-      // Connect directly to the PC's origin (works both locally and on Vercel)
-      const serverUrl = server.origin || server.url;
-      await wsClient.connect(serverUrl);
+      // Ensure URL has protocol
+      const fullURL = url.startsWith('http') ? url : `http://${url}`;
+      await wsClient.connect(fullURL);
       setConnectionStatus('connected');
       setStatus('scanning');
       startScanning();
@@ -84,7 +115,7 @@ function PhoneScanner() {
 
   function handleDisconnected() {
     setConnectionStatus('disconnected');
-    setStatus('idle');
+    setStatus('connect');
     stopScanning();
   }
 
@@ -93,6 +124,10 @@ function PhoneScanner() {
     setLastScan({
       message: 'Connection error occurred'
     });
+  }
+
+  async function connectToServer(server) {
+    await connectToURL(server.origin || server.url);
   }
 
   async function startScanning() {
@@ -200,14 +235,125 @@ function PhoneScanner() {
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: '20px'
+        padding: '20px',
+        overflowY: 'auto'
       }}>
+        {status === 'connect' && !qrScannerActive && (
+          <div style={{ textAlign: 'center', width: '100%', maxWidth: '400px' }}>
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '30px' }}>Connect to PC</h2>
+
+            {/* Scan QR Code Button */}
+            <button
+              onClick={startQRScanner}
+              className="btn-primary"
+              style={{
+                padding: '20px',
+                fontSize: '1.1rem',
+                width: '100%',
+                marginBottom: '15px',
+                borderRadius: '50vmax'
+              }}
+            >
+              Scan PC QR Code
+            </button>
+
+            {/* Manual URL Entry */}
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{ fontSize: '0.9rem', color: '#999', marginBottom: '10px' }}>
+                Or enter PC address manually:
+              </p>
+              <input
+                type="text"
+                placeholder="e.g., 192.168.1.100:8765 or http://..."
+                value={manualURL}
+                onChange={(e) => setManualURL(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  marginBottom: '10px',
+                  background: '#111',
+                  color: '#fff',
+                  border: '1px solid #333',
+                  borderRadius: '4px',
+                  fontSize: '1rem',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <button
+                onClick={() => manualURL && connectToURL(manualURL)}
+                className="btn-primary"
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '1rem',
+                  width: '100%',
+                  borderRadius: '50vmax'
+                }}
+              >
+                Connect
+              </button>
+            </div>
+
+            {/* Auto-discovered Servers */}
+            {servers.length > 0 && (
+              <div style={{ marginTop: '30px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#999', marginBottom: '10px' }}>
+                  Or select from discovered PC:
+                </p>
+                {servers.map((server, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => connectToServer(server)}
+                    className="btn-secondary"
+                    style={{
+                      padding: '12px',
+                      fontSize: '0.9rem',
+                      width: '100%',
+                      marginBottom: '8px',
+                      borderRadius: '50vmax'
+                    }}
+                  >
+                    {server.deviceID || 'PC Server'} ({server.origin})
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {qrScannerActive && (
+          <div style={{ width: '100%', maxWidth: '400px' }}>
+            <p style={{ textAlign: 'center', marginBottom: '15px' }}>
+              Point camera at the PC QR code
+            </p>
+            <div id="qr-reader" style={{
+              width: '100%',
+              borderRadius: '8px',
+              overflow: 'hidden'
+            }}></div>
+            <button
+              onClick={() => {
+                qrScannerRef.current?.stopScan();
+                setQrScannerActive(false);
+              }}
+              className="btn-secondary"
+              style={{
+                padding: '12px',
+                fontSize: '1rem',
+                width: '100%',
+                marginTop: '15px',
+                borderRadius: '50vmax'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         {status === 'searching' && (
           <div style={{ textAlign: 'center' }}>
             <div style={{
               fontSize: '3rem',
-              marginBottom: '20px',
-              animation: 'pulse 1s infinite'
+              marginBottom: '20px'
             }}>...</div>
             <p>Searching for PC...</p>
           </div>

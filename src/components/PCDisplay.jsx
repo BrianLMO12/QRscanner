@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { getDeviceID } from '../utils/deviceDetection.js';
+import { getLocalIP, getServerURL } from '../utils/localIP.js';
 import { WebSocketServer } from '../utils/websocket.js';
 import { initCamera, stopCamera, scanFrame, formatBarcodeData } from '../utils/scannerUtils.js';
 
@@ -9,6 +11,8 @@ function PCDisplay({ setError }) {
   const [connectedDevices, setConnectedDevices] = useState(new Set());
   const [isScanning, setIsScanning] = useState(false);
   const [cameraMode, setCameraMode] = useState(null); // 'phone' or 'usb'
+  const [localIP, setLocalIP] = useState(null);
+  const [qrURL, setQrURL] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -21,6 +25,19 @@ function PCDisplay({ setError }) {
   useEffect(() => {
     console.log('PC Display Ready');
     console.log('Device ID:', deviceID);
+
+    // Detect local IP for QR code
+    getLocalIP().then(ip => {
+      setLocalIP(ip);
+      if (ip) {
+        const url = getServerURL(ip, 8765);
+        setQrURL(url);
+        console.log('Local IP detected:', ip);
+      } else {
+        console.warn('Could not detect local IP, using localhost');
+        setQrURL(getServerURL('localhost', 8765));
+      }
+    });
 
     // Initialize WebSocket server for phone discovery
     wsServerRef.current = new WebSocketServer();
@@ -190,9 +207,39 @@ function PCDisplay({ setError }) {
         gap: '20px',
         padding: '20px'
       }}>
-        <h1 style={{ fontSize: '2rem', marginBottom: '40px' }}>
-          Select Scanner Mode
+        <h1 style={{ fontSize: '2rem', marginBottom: '10px' }}>
+          QR Scanner
         </h1>
+
+        {/* QR Code Section */}
+        {qrURL && (
+          <div style={{
+            marginBottom: '30px',
+            padding: '20px',
+            background: '#111',
+            borderRadius: '8px',
+            border: '2px solid #333'
+          }}>
+            <p style={{ fontSize: '0.9rem', color: '#999', marginBottom: '15px', textAlign: 'center' }}>
+              Scan with phone to connect (same WiFi):
+            </p>
+            <div style={{ background: '#fff', padding: '10px', borderRadius: '4px' }}>
+              <QRCodeSVG
+                value={qrURL}
+                size={200}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '15px', textAlign: 'center', wordBreak: 'break-all' }}>
+              {qrURL}
+            </p>
+          </div>
+        )}
+
+        <h2 style={{ fontSize: '1.1rem', marginTop: '20px' }}>
+          Or select mode:
+        </h2>
 
         <div style={{
           display: 'flex',
