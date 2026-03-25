@@ -104,7 +104,7 @@ function PhoneScanner() {
       // Ensure URL has protocol
       const fullURL = url.startsWith('http') ? url : `http://${url}`;
       console.log('Attempting to connect to:', fullURL);
-      
+
       await wsClient.connect(fullURL);
       setConnectionStatus('connected');
       setStatus('scanning');
