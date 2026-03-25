@@ -79,13 +79,21 @@ function PhoneScanner() {
       qrScannerRef.current = new QRCodeScanner();
     }
     try {
-      qrScannerRef.current.startScan('qr-reader', handleQRScanSuccess, handleQRScanError);
+      console.log('Starting QR scanner...');
+      qrScannerRef.current.startScan('qr-reader', handleQRScanSuccess, (error) => {
+        console.error('QR Scanner init error:', error);
+        setLastScan({
+          message: 'Camera access failed. Check permissions or try manual entry.'
+        });
+        setQrScannerActive(false);
+      });
       setQrScannerActive(true);
     } catch (error) {
       console.error('Failed to start QR scanner:', error);
       setLastScan({
-        message: 'Camera access denied. Try manual URL entry.'
+        message: 'Camera error: ' + (error?.message || 'Permission denied')
       });
+      setQrScannerActive(false);
     }
   }
 
@@ -95,15 +103,18 @@ function PhoneScanner() {
     try {
       // Ensure URL has protocol
       const fullURL = url.startsWith('http') ? url : `http://${url}`;
+      console.log('Attempting to connect to:', fullURL);
+      
       await wsClient.connect(fullURL);
       setConnectionStatus('connected');
       setStatus('scanning');
       startScanning();
     } catch (error) {
+      console.error('Connection error details:', error);
       setConnectionStatus('disconnected');
       setStatus('error');
       setLastScan({
-        message: 'Failed to connect: ' + error.message
+        message: `Failed to connect: ${error?.message || error?.code || 'Unknown error'}`
       });
     }
   }
