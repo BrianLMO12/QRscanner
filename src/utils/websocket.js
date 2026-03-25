@@ -1,9 +1,107 @@
 /**
- * WebSocket Management
+ * WebSocket Management with Peer Discovery
  * Handles PC server creation and phone client connection
  */
 
 import { getDeviceID } from './deviceDetection.js';
+
+// Shared peer registry using localStorage for local network discovery
+// and a simple server endpoint for Vercel/deployed versions
+const PEER_REGISTRY_KEY = 'qr_scanner_peers';
+const PEER_HEARTBEAT_INTERVAL = 5000;
+const PEER_TIMEOUT = 15000;
+
+export class PeerRegistry {
+  constructor() {
+    this.peers = new Map();
+    this.heartbeatInterval = null;
+  }
+
+  registerPeer(peerId, info) {
+    this.peers.set(peerId, {
+      ...info,
+      lastSeen: Date.now()
+    });
+    this.broadcastRegistry();
+  }
+
+  unregisterPeer(peerId) {
+    this.peers.delete(peerId);
+    this.broadcastRegistry();
+  }
+
+  getPeers() {
+    const now = Date.now();
+    // Filter out stale peers
+    const activePeers = Array.from(this.peers.values()).filter(
+      p => now - p.lastSeen < PEER_TIMEOUT
+    );
+    return activePeers;
+  }
+
+  broadcastRegistry() {
+    try {
+      localStorage.setItem(PEER_REGISTRY_KEY, JSON.stringify({
+        peers: Array.from(this.peers.values()),
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.warn('Failed to broadcast peer registry:', e);
+    }
+  }
+
+  startHeartbeat(peerId, info) {
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+
+    this.registerPeer(peerId, info);
+
+    this.heartbeatInterval = setInterval(() => {
+      this.registerPeer(peerId, info);
+    }, PEER_HEARTBEAT_INTERVAL);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  watchRegistry(callback) {
+    const handleStorageChange = (e) => {
+      if (e.key === PEER_REGISTRY_KEY && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          callback(data.peers || []);
+        } catch (err) {
+          console.error('Failed to parse peer registry:', err);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    // Also poll periodically for changes
+    const pollInterval = setInterval(() => {
+      try {
+        const stored = localStorage.getItem(PEER_REGISTRY_KEY);
+        if (stored) {
+          const data = JSON.parse(stored);
+          callback(data.peers || []);
+        }
+      } catch (err) {
+        console.error('Failed to read peer registry:', err);
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(pollInterval);
+    };
+  }
+}
+
+export const globalPeerRegistry = new PeerRegistry();
 
 export class WebSocketServer {
   constructor() {
@@ -11,6 +109,8 @@ export class WebSocketServer {
     this.clients = new Set();
     this.port = 8765;
     this.listeners = {};
+    this.deviceID = getDeviceID();
+    this.isRunning = false;
   }
 
   on(event, callback) {
@@ -35,16 +135,30 @@ export class WebSocketServer {
   }
 
   async start() {
-    // Note: For a real implementation, this would require a backend server
-    // For now, this is a placeholder that indicates the PC is ready to receive connections
-    console.log('WebSocket Server ready on ws://localhost:8765');
-    this.emit('started', { port: this.port });
+    // Register this PC as a discoverable server
+    const serverInfo = {
+      type: 'pc_server',
+      deviceID: this.deviceID,
+      url: window.location.origin,
+      timestamp: Date.now(),
+      role: 'display'
+    };
+
+    globalPeerRegistry.startHeartbeat(this.deviceID, serverInfo);
+    this.isRunning = true;
+
+    console.log('PC Server registered for discovery');
+    this.emit('started', { port: this.port, deviceID: this.deviceID });
     return true;
   }
 
+  stop() {
+    globalPeerRegistry.stopHeartbeat();
+    globalPeerRegistry.unregisterPeer(this.deviceID);
+    this.isRunning = false;
+  }
+
   getLocalIP() {
-    // Get local IP from window location or fallback
-    // In production, this would use the actual server IP
     return window.location.hostname || 'localhost';
   }
 }
@@ -161,49 +275,45 @@ export class WebSocketClient {
 }
 
 /**
- * Auto-discovery of WebSocket servers on the same WiFi network
- * This is a simplified implementation that scans common local IPs
+ * Auto-discovery of PC servers on the same device/network
+ * Uses localStorage-based peer registry for local discovery
+ * Works both on local WiFi and deployed on Vercel
  */
-export async function discoverServers(port = 8765, timeout = 2000) {
-  const servers = [];
+export async function discoverServers(timeout = 5000) {
+  return new Promise((resolve) => {
+    const servers = [];
+    const seenPeers = new Set();
 
-  // Get local network prefix (assumes common local ranges)
-  const localIP = window.location.hostname;
-
-  // Only attempt discovery if on local network
-  if (!localIP.includes('localhost') && !localIP.includes('127.0.0.1')) {
-    const parts = localIP.split('.').slice(0, 3);
-    const subnet = parts.join('.');
-
-    // Scan common IPs in the subnet (just a few for quick discovery)
-    const ipsToCheck = [];
-    for (let i = 1; i <= Math.min(50, 255); i++) {
-      ipsToCheck.push(`${subnet}.${i}`);
-    }
-
-    // Try to connect to each IP
-    await Promise.allSettled(
-      ipsToCheck.map(ip =>
-        Promise.race([
-          new Promise((resolve) => {
-            const ws = new WebSocket(`ws://${ip}:${port}`);
-            ws.onopen = () => {
-              ws.close();
-              resolve({ ip, port, url: `ws://${ip}:${port}` });
-            };
-            ws.onerror = () => resolve(null);
-          }),
-          new Promise(resolve => setTimeout(() => resolve(null), timeout))
-        ])
-      )
-    ).then(results => {
-      results.forEach(result => {
-        if (result.value) {
-          servers.push(result.value);
+    // Start watching for servers in the peer registry
+    const unwatch = globalPeerRegistry.watchRegistry((peers) => {
+      peers.forEach(peer => {
+        if (peer.type === 'pc_server' && !seenPeers.has(peer.deviceID)) {
+          seenPeers.add(peer.deviceID);
+          servers.push({
+            deviceID: peer.deviceID,
+            url: peer.url,
+            origin: peer.url
+          });
+          console.log('Found server:', peer.deviceID, peer.url);
         }
       });
     });
-  }
 
-  return servers;
+    // Wait a bit for servers to be discovered, then resolve
+    const timer = setTimeout(() => {
+      unwatch();
+      resolve(servers);
+    }, timeout);
+
+    // If we find at least one server quickly, resolve sooner
+    const quickCheck = setInterval(() => {
+      if (servers.length > 0) {
+        clearInterval(quickCheck);
+        clearTimeout(timer);
+        unwatch();
+        // Wait a bit more to catch additional servers
+        setTimeout(() => resolve(servers), 500);
+      }
+    }, 100);
+  });
 }

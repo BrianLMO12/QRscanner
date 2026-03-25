@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getDeviceID } from '../utils/deviceDetection.js';
+import { WebSocketServer } from '../utils/websocket.js';
 import { initCamera, stopCamera, scanFrame, formatBarcodeData } from '../utils/scannerUtils.js';
 
 function PCDisplay({ setError }) {
@@ -13,6 +14,7 @@ function PCDisplay({ setError }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const scanIntervalRef = useRef(null);
+  const wsServerRef = useRef(null);
 
   const deviceID = getDeviceID();
 
@@ -20,7 +22,14 @@ function PCDisplay({ setError }) {
     console.log('PC Display Ready');
     console.log('Device ID:', deviceID);
 
+    // Initialize WebSocket server for phone discovery
+    wsServerRef.current = new WebSocketServer();
+    wsServerRef.current.start();
+
     return () => {
+      if (wsServerRef.current) {
+        wsServerRef.current.stop();
+      }
       if (streamRef.current) {
         stopCamera(streamRef.current);
       }

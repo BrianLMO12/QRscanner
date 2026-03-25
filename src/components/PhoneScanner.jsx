@@ -39,7 +39,7 @@ function PhoneScanner() {
     setConnectionStatus('disconnected');
 
     try {
-      const foundServers = await discoverServers(8765, 3000);
+      const foundServers = await discoverServers(5000);
 
       if (foundServers.length > 0) {
         setServers(foundServers);
@@ -62,7 +62,9 @@ function PhoneScanner() {
     setConnectionStatus('connecting');
 
     try {
-      await wsClient.connect(server.url);
+      // Connect directly to the PC's origin (works both locally and on Vercel)
+      const serverUrl = server.origin || server.url;
+      await wsClient.connect(serverUrl);
       setConnectionStatus('connected');
       setStatus('scanning');
       startScanning();
