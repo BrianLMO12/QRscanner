@@ -1,121 +1,225 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect, useMemo, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { Html5Qrcode } from "html5-qrcode";
+import { db } from "./firebase";
+import {
+  child,
+  onChildAdded,
+  onValue,
+  push,
+  ref,
+  set,
+  query,
+  limitToLast,
+} from "firebase/database";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+const isScannerRoute = (path) => path.toLowerCase().startsWith("/scan/");
+const getSessionIdFromPath = () => {
+  const path = window.location.pathname.replace(/\/+/g, "/").replace(/\/$/, "");
+  if (isScannerRoute(path)) {
+    return path.replace("/scan/", "") || null;
+  }
+  return null;
+};
+
+const createSessionId = () => {
+  return `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+};
+
+function Dashboard() {
+  const [sessionId] = useState(createSessionId);
+  const [connectionStatus, setConnectionStatus] = useState("waiting");
+  const [scanHistory, setScanHistory] = useState([]);
+  const [lastScan, setLastScan] = useState("");
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [inputValue]);
+
+  useEffect(() => {
+    const sessionRef = ref(db, `scan/${sessionId}`);
+    const listQuery = query(sessionRef, limitToLast(100));
+
+    const unsubValue = onValue(listQuery, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) {
+        setConnectionStatus("waiting");
+        return;
+      }
+      setConnectionStatus("connected");
+      const items = Object.entries(data)
+        .map(([id, value]) => ({ id, ...value }))
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      setScanHistory(items.reverse());
+      const latest = items[items.length - 1];
+      if (latest?.code) {
+        setLastScan(latest.code);
+        setInputValue(latest.code);
+      }
+      const audio = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=");
+      audio.play().catch(() => { });
+    });
+
+    const unsubChild = onChildAdded(sessionRef, (snapshot) => {
+      const item = snapshot.val();
+      if (!item?.code) return;
+      setConnectionStatus("connected");
+      setLastScan(item.code);
+      setInputValue(item.code);
+      setScanHistory((prev) => [{ id: snapshot.key, ...item }, ...prev].slice(0, 100));
+    });
+
+    return () => {
+      unsubValue();
+      unsubChild();
+    };
+  }, [sessionId]);
+
+  const targetUrl = useMemo(() => `${window.location.origin}/scan/${sessionId}`, [sessionId]);
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <main className="app-shell">
+      <header>
+        <h1>POS Real-time Scanner Dashboard</h1>
+        <p>Status: <strong>{connectionStatus}</strong> (session {sessionId})</p>
+      </header>
+
+      <section className="panel">
+        <h2>Scanner session</h2>
+        <div className="qr-wrap">
+          <QRCodeSVG value={targetUrl} size={180} />
+          <p>Scan this from the phone camera:</p>
+          <code>{targetUrl}</code>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+      </section>
+
+      <section className="panel">
+        <h2>Live input</h2>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!inputValue) return;
+            console.log("Form submitted code", inputValue);
+            setInputValue("");
+          }}
         >
-          Count is {count}
-        </button>
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            autoFocus
+            placeholder="Waiting for code..."
+          />
+          <button type="submit">Submit</button>
+        </form>
+        <p>Last scanned: <strong>{lastScan || "none yet"}</strong></p>
       </section>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
+      <section className="panel">
+        <h2>Scan history</h2>
+        <ul className="history-list">
+          {scanHistory.length === 0 ? (<li>No scans yet.</li>) : scanHistory.map((item) => (
+            <li key={item.id}>
+              <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+              <strong>{item.code}</strong>
             </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
+          ))}
+        </ul>
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    </main>
+  );
 }
 
-export default App
+function Scanner({ sessionId }) {
+  const [status, setStatus] = useState("starting");
+  const [lastCode, setLastCode] = useState("");
+  const lastScanRef = useRef({ code: null, ts: 0 });
+  const html5QrCodeRef = useRef(null);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setStatus("missing session id");
+      return;
+    }
+
+    const qrRegionId = "html5qr-scanner";
+    const scanner = new Html5Qrcode(qrRegionId);
+    html5QrCodeRef.current = scanner;
+
+    const tryPush = async (code) => {
+      const now = Date.now();
+      const last = lastScanRef.current;
+      if (last.code === code && now - last.ts < 3000) {
+        return;
+      }
+      lastScanRef.current = { code, ts: now };
+
+      const newRef = push(child(ref(db), `scan/${sessionId}`));
+      try {
+        await set(newRef, { code, timestamp: now });
+        setLastCode(code);
+        setStatus("scanned");
+      } catch (error) {
+        console.error("Failed to push scan", error);
+        setStatus("firebase write failed");
+      }
+    };
+
+    const onScanSuccess = (decodedText) => {
+      if (!decodedText) return;
+      setStatus("detected");
+      tryPush(decodedText);
+    };
+
+    const onScanFailure = (_error) => {
+      // Ignore, but keep status updated occasionally.
+      setStatus("scanning...");
+    };
+
+    scanner
+      .start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess, onScanFailure)
+      .then(() => setStatus("ready"))
+      .catch((err) => {
+        console.error("Camera init failed", err);
+        setStatus("camera init failed");
+      });
+
+    return () => {
+      scanner.stop().catch(() => { });
+      scanner.clear().catch(() => { });
+    };
+  }, [sessionId]);
+
+  return (
+    <main className="app-shell">
+      <header>
+        <h1>Phone Scanner</h1>
+        <p>Session: {sessionId}</p>
+        <p>Status: <strong>{status}</strong></p>
+      </header>
+
+      <section className="panel">
+        <div id="html5qr-scanner" className="scanner"></div>
+        <p>Last scanned code: <strong>{lastCode || "none"}</strong></p>
+      </section>
+
+      <section className="panel">
+        <p>Scan any barcode / QR code to send to dashboard in real time.</p>
+        <a href="/" className="button">Return to dashboard</a>
+      </section>
+    </main>
+  );
+}
+
+export default function App() {
+  const routeSession = getSessionIdFromPath();
+
+  return routeSession ? <Scanner sessionId={routeSession} /> : <Dashboard />;
+}
+
